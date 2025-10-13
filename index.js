@@ -23,18 +23,12 @@ async function initParser() {
     if (!target) throw new Error("불곡고를 컴시간에서 찾을 수 없음");
     timetableParser.setSchool(target.code);
     parserReady = true;
-    console.log("Parser initialized. 학교 설정 완료.");
+    console.log("Parser ready. 학교 설정 완료.");
   } catch (err) {
     console.error("Parser 초기화 실패:", err);
   }
 }
 initParser();
-
-// helper: 오늘 요일 한글
-function getTodayKorean() {
-  const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
-  return days[new Date().getDay()];
-}
 
 // helper: 요일 → 인덱스
 function dayToIndex(dayKorean) {
@@ -42,18 +36,26 @@ function dayToIndex(dayKorean) {
   return map[dayKorean];
 }
 
+// helper: 오늘 또는 내일 요일 한글
+function getKoreanDay(offset = 0) {
+  const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  return days[date.getDay()];
+}
+
 // ======================
 // 텍스트 시간표 API
 // ======================
 apiRouter.post("/timeTable", async (req, res) => {
-  try {
-    if (!parserReady) {
-      return res.status(503).json({
-        version: "2.0",
-        template: { outputs: [{ simpleText: { text: "⚠️ 서버 초기화 중입니다. 잠시 후 다시 시도해주세요." } }] }
-      });
-    }
+  if (!parserReady) {
+    return res.status(503).json({
+      version: "2.0",
+      template: { outputs: [{ simpleText: { text: "⚠️ 서버 초기화 중입니다. 잠시 후 다시 시도해주세요." } }] }
+    });
+  }
 
+  try {
     console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
 
     let grade = null;
@@ -93,7 +95,11 @@ apiRouter.post("/timeTable", async (req, res) => {
       });
     }
 
-    const today = getTodayKorean();
+    // 오늘/내일 체크
+    let dayOffset = 0; // 기본: 오늘
+    if (/내일/.test(utterance)) dayOffset = 1;
+
+    const today = getKoreanDay(dayOffset);
     const idx = dayToIndex(today);
 
     const full = await timetableParser.getTimetable();
@@ -117,8 +123,9 @@ apiRouter.post("/timeTable", async (req, res) => {
   }
 });
 
-// 헬스체크
-app.get('/healthz', (req, res) => res.send('OK'));
+app.get('/healthz', (req, res) => {
+  res.send('OK');
+});
 
 app.listen(PORT, () => {
   console.log(`Skill server listening on port ${PORT}`);
