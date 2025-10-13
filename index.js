@@ -21,6 +21,7 @@ apiRouter.post("/timeTable", async (req, res) => {
       template: { outputs: [{ simpleText: { text: "⚠️ 서버 초기화 중입니다. 잠시 후 다시 시도해주세요." } }] }
     });
   }
+}
 const express = require("express");
 const bodyParser = require("body-parser");
 const Timetable = require("comcigan-parser");
