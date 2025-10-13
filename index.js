@@ -106,7 +106,9 @@ apiRouter.post("/timeTable", async (req, res) => {
     });
   }
 });
-
+app.get('/healthz', (req, res) => {
+  res.send('OK');
+});
 app.listen(PORT, () => {
   console.log(`Skill server listening on port ${PORT}`);
 });
