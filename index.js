@@ -14,7 +14,6 @@ app.use("/api", apiRouter);
 // 컴시간 파서 초기화
 const timetableParser = new Timetable();
 let parserReady = false;
-
 async function initParser() {
   try {
     await timetableParser.init({ cache: 1000 * 60 * 30 }); // 30분 캐시
@@ -23,25 +22,25 @@ async function initParser() {
     if (!target) throw new Error("불곡고를 컴시간에서 찾을 수 없음");
     timetableParser.setSchool(target.code);
     parserReady = true;
-    console.log("Parser ready. 학교 설정 완료.");
+    console.log("Parser initialized. 학교 설정 완료.");
   } catch (err) {
     console.error("Parser 초기화 실패:", err);
   }
 }
 initParser();
 
+// helper: 오늘/내일 요일 한글
+function getDayKorean(offset = 0) {
+  const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
+  const today = new Date();
+  today.setDate(today.getDate() + offset);
+  return days[today.getDay()];
+}
+
 // helper: 요일 → 인덱스
 function dayToIndex(dayKorean) {
   const map = { "월요일":0,"화요일":1,"수요일":2,"목요일":3,"금요일":4 };
   return map[dayKorean];
-}
-
-// helper: 오늘 또는 내일 요일 한글
-function getKoreanDay(offset = 0) {
-  const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return days[date.getDay()];
 }
 
 // ======================
@@ -60,26 +59,27 @@ apiRouter.post("/timeTable", async (req, res) => {
 
     let grade = null;
     let classroom = null;
+    let dayOffset = 0; // 0=오늘, 1=내일
 
-    // 1) params에서 가져오기
+    const utterance = (req.body.userRequest?.utterance || "").trim();
+
+    // 1) 내일 포함 여부
+    if (/내일/.test(utterance)) dayOffset = 1;
+
+    // 2) params에서 가져오기
     if (req.body.action?.params) {
       grade = parseInt(req.body.action.params.grade);
       classroom = parseInt(req.body.action.params.classroom);
     }
 
-    // 2) utterance에서 학년/반 추출
-    const utterance = req.body.userRequest?.utterance || "";
+    // 3) utterance에서 학년/반 추출
     if (!grade || !classroom) {
       const matchKor = utterance.match(/([1-3])\s*학년\s*([1-9])\s*반/);
-      if (matchKor) {
-        grade = parseInt(matchKor[1]);
-        classroom = parseInt(matchKor[2]);
-      } else {
-        const matchNum = utterance.match(/([1-3])[\/\-,]([1-9])/);
-        if (matchNum) {
-          grade = parseInt(matchNum[1]);
-          classroom = parseInt(matchNum[2]);
-        }
+      const matchNum = utterance.match(/([1-3])[\/\-,]([1-9])/);
+      const match = matchKor || matchNum;
+      if (match) {
+        grade = parseInt(match[1]);
+        classroom = parseInt(match[2]);
       }
     }
 
@@ -95,18 +95,14 @@ apiRouter.post("/timeTable", async (req, res) => {
       });
     }
 
-    // 오늘/내일 체크
-    let dayOffset = 0; // 기본: 오늘
-    if (/내일/.test(utterance)) dayOffset = 1;
-
-    const today = getKoreanDay(dayOffset);
-    const idx = dayToIndex(today);
+    const dayKorean = getDayKorean(dayOffset);
+    const idx = dayToIndex(dayKorean);
 
     const full = await timetableParser.getTimetable();
     const todaySchedule = full[grade]?.[classroom]?.[idx] || [];
 
-    let text = `${today} — ${grade}학년 ${classroom}반 시간표\n\n`;
-    if (todaySchedule.length === 0) text += "오늘은 수업이 없어요!";
+    let text = `${dayOffset === 1 ? "내일" : "오늘"} ${dayKorean} — ${grade}학년 ${classroom}반 시간표\n\n`;
+    if (todaySchedule.length === 0) text += "수업이 없어요!";
     else text += todaySchedule.map(o => `${o.classTime}교시: ${o.subject}`).join("\n");
 
     return res.status(200).json({
@@ -123,10 +119,7 @@ apiRouter.post("/timeTable", async (req, res) => {
   }
 });
 
-app.get('/healthz', (req, res) => {
-  res.send('OK');
-});
+app.get('/healthz', (req, res) => res.send('OK'));
 
 app.listen(PORT, () => {
   console.log(`Skill server listening on port ${PORT}`);
-});
