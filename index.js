@@ -1,27 +1,3 @@
-let parserReady = false;
-
-async function initParser() {
-  try {
-    await timetableParser.init({ cache: 1000 * 60 * 30 });
-    const schoolList = await timetableParser.search("불곡고");
-    const target = schoolList.find(s => s.name.includes("불곡고"));
-    if (!target) throw new Error("불곡고를 컴시간에서 찾을 수 없음");
-    timetableParser.setSchool(target.code);
-    parserReady = true;
-    console.log("Parser ready.");
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-apiRouter.post("/timeTable", async (req, res) => {
-  if (!parserReady) {
-    return res.status(503).json({
-      version: "2.0",
-      template: { outputs: [{ simpleText: { text: "⚠️ 서버 초기화 중입니다. 잠시 후 다시 시도해주세요." } }] }
-    });
-  }
-}
 const express = require("express");
 const bodyParser = require("body-parser");
 const Timetable = require("comcigan-parser");
@@ -37,6 +13,8 @@ app.use("/api", apiRouter);
 
 // 컴시간 파서 초기화
 const timetableParser = new Timetable();
+let parserReady = false;
+
 async function initParser() {
   try {
     await timetableParser.init({ cache: 1000 * 60 * 30 }); // 30분 캐시
@@ -44,6 +22,7 @@ async function initParser() {
     const target = schoolList.find(s => s.name.includes("불곡고"));
     if (!target) throw new Error("불곡고를 컴시간에서 찾을 수 없음");
     timetableParser.setSchool(target.code);
+    parserReady = true;
     console.log("Parser initialized. 학교 설정 완료.");
   } catch (err) {
     console.error("Parser 초기화 실패:", err);
@@ -68,6 +47,13 @@ function dayToIndex(dayKorean) {
 // ======================
 apiRouter.post("/timeTable", async (req, res) => {
   try {
+    if (!parserReady) {
+      return res.status(503).json({
+        version: "2.0",
+        template: { outputs: [{ simpleText: { text: "⚠️ 서버 초기화 중입니다. 잠시 후 다시 시도해주세요." } }] }
+      });
+    }
+
     console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
 
     let grade = null;
@@ -130,9 +116,10 @@ apiRouter.post("/timeTable", async (req, res) => {
     });
   }
 });
-app.get('/healthz', (req, res) => {
-  res.send('OK');
-});
+
+// 헬스체크
+app.get('/healthz', (req, res) => res.send('OK'));
+
 app.listen(PORT, () => {
   console.log(`Skill server listening on port ${PORT}`);
 });
