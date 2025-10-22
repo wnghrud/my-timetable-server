@@ -47,6 +47,7 @@ function dayToIndex(dayKorean) {
   const map = { "월요일":0,"화요일":1,"수요일":2,"목요일":3,"금요일":4 };
   return map[dayKorean];
 }
+
 // ======================
 // 텍스트 시간표 API
 // ======================
