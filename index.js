@@ -18,7 +18,6 @@ app.use("/api", apiRouter);
 // ======================
 const timetableParser = new Timetable();
 let parserReady = false;
-
 async function initParser() {
   try {
     await timetableParser.init({ cache: 1000 * 60 * 30 }); // 30분 캐시
