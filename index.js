@@ -134,5 +134,3 @@ app.get('/healthz', (req, res) => res.send('OK'));
 app.listen(PORT, () => {
   console.log(`Skill server listening on port ${PORT}`);
 });
-app.listen(PORT, () => {
-  console.log(`Skill server listening on port ${PORT}`);
