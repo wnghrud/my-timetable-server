@@ -30,15 +30,14 @@ async function initParser() {
 }
 initParser();
 
-// helper: 오늘 요일 한글 (한국 시간 기준)
 function getTodayKorean(offset = 0) {
   const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
   
-  // 한국 시간 기준으로 현재 날짜 계산
+  // 한국 시간 기준으로 현재 시간 생성
   const now = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
   );
-  
+
   now.setDate(now.getDate() + offset);
   return days[now.getDay()];
 }
@@ -48,7 +47,6 @@ function dayToIndex(dayKorean) {
   const map = { "월요일":0,"화요일":1,"수요일":2,"목요일":3,"금요일":4 };
   return map[dayKorean];
 }
-
 // ======================
 // 텍스트 시간표 API
 // ======================
