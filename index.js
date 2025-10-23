@@ -26,9 +26,9 @@ async function initParser() {
     const target = schoolList.find(s => s.name && s.name.includes("불곡고")) || schoolList[0];
     timetableParser.setSchool(target.code);
     parserReady = true;
-    console.log("✅ Parser ready for:", target.name || target.code);
+    console.log("Parser ready for:", target.name || target.code);
   } catch (err) {
-    console.error("❌ Parser 초기화 실패:", err);
+    console.error("Parser 초기화 실패:", err);
     parserReady = false;
     setTimeout(initParser, 1000 * 60 * 1); // 1분 후 재시도
   }
@@ -77,7 +77,7 @@ apiRouter.post("/timeTable", async (req, res) => {
     return res.status(503).json({
       version: "2.0",
       template: {
-        outputs: [{ simpleText: { text: "⚠️ 서버에서 시간표 파서를 준비 중입니다. 잠시 후 다시 시도해주세요." } }]
+        outputs: [{ simpleText: { text: "서버에서 시간표 파서를 준비 중입니다. 잠시 후 다시 시도해주세요." } }]
       }
     });
   }
@@ -126,7 +126,7 @@ apiRouter.post("/timeTable", async (req, res) => {
         version: "2.0",
         template: {
           outputs: [
-            { simpleText: { text: "❌ 학년과 반 정보를 올바르게 입력해주세요. 예: '2학년 5반' 또는 '2-5'." } }
+            { simpleText: { text: "학년과 반 정보를 올바르게 입력해주세요. 예: '2학년 5반' 또는 '2-5'." } }
           ]
         }
       });
@@ -159,7 +159,7 @@ apiRouter.post("/timeTable", async (req, res) => {
     console.error("시간표 응답 에러:", err);
     return res.status(500).json({
       version: "2.0",
-      template: [{ simpleText: { text: "❌ 시간표를 처리하는 중 오류가 발생했습니다." } }]
+      template: [{ simpleText: { text: "시간표를 처리하는 중 오류가 발생했습니다." } }]
     });
   }
 });
@@ -169,5 +169,5 @@ app.get("/healthz", (req, res) => res.send("OK"));
 
 // 서버 시작
 app.listen(PORT, () => {
-  console.log(`🚀 Skill server listening on port ${PORT}`);
+  console.log(`Skill server listening on port ${PORT}`);
 });
