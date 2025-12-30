@@ -50,7 +50,7 @@ function getKoreaDate() {
 }
 
 // --------------------
-// API (오늘만 가능)
+// API (오늘만 가능 + 요일 보정)
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   if (!parserReady) {
@@ -91,7 +91,7 @@ apiRouter.post("/timeTable", async (req, res) => {
 
     const date = getKoreaDate();
     const dayName = DAYS[date.getDay()];
-    const idx = DAY_INDEX[dayName];
+    let idx = DAY_INDEX[dayName];
 
     // 주말 차단
     if (idx === undefined) {
@@ -102,6 +102,10 @@ apiRouter.post("/timeTable", async (req, res) => {
         }
       });
     }
+
+    // 🔧 comcigan-parser 요일 1일 밀림 보정
+    idx = idx - 1;
+    if (idx < 0) idx = 0;
 
     const full = await timetableParser.getTimetable();
     const schedule = full[grade]?.[classroom]?.[idx] || [];
