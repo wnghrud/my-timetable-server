@@ -43,16 +43,14 @@ const DAY_INDEX = {
   "금요일": 4
 };
 
-function getKoreaDate(offset = 0) {
-  const d = new Date(
+function getKoreaDate() {
+  return new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
   );
-  d.setDate(d.getDate() + offset);
-  return d;
 }
 
 // --------------------
-// API
+// API (오늘만 가능)
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   if (!parserReady) {
@@ -69,7 +67,7 @@ apiRouter.post("/timeTable", async (req, res) => {
 
     const grade = parseInt(params.grade);
     const classroom = parseInt(params.classroom);
-    const dayParam = params.day; // "오늘" | "내일"
+    const dayParam = params.day; // 반드시 "오늘"
 
     // 🔒 파라미터 검증
     if (!grade || !classroom) {
@@ -81,21 +79,21 @@ apiRouter.post("/timeTable", async (req, res) => {
       });
     }
 
-    let dayOffset = 0; // 기본 오늘
-    if (dayParam === "내일") dayOffset = 1;
-    if (dayParam && dayParam !== "오늘" && dayParam !== "내일") {
+    // 🔴 오늘만 허용
+    if (dayParam !== "오늘") {
       return res.json({
         version: "2.0",
         template: {
-          outputs: [{ simpleText: { text: "날짜는 오늘 또는 내일만 가능합니다." } }]
+          outputs: [{ simpleText: { text: "시간표는 오늘만 조회할 수 있습니다." } }]
         }
       });
     }
 
-    const date = getKoreaDate(dayOffset);
+    const date = getKoreaDate();
     const dayName = DAYS[date.getDay()];
     const idx = DAY_INDEX[dayName];
 
+    // 주말 차단
     if (idx === undefined) {
       return res.json({
         version: "2.0",
@@ -108,7 +106,7 @@ apiRouter.post("/timeTable", async (req, res) => {
     const full = await timetableParser.getTimetable();
     const schedule = full[grade]?.[classroom]?.[idx] || [];
 
-    let text = `${dayName} — ${grade}학년 ${classroom}반 시간표\n\n`;
+    let text = `${dayName} — ${grade}학년 ${classroom}반 오늘 시간표\n\n`;
 
     if (schedule.length === 0) {
       text += "수업이 없습니다!";
@@ -120,7 +118,9 @@ apiRouter.post("/timeTable", async (req, res) => {
 
     return res.json({
       version: "2.0",
-      template: { outputs: [{ simpleText: { text } }] }
+      template: {
+        outputs: [{ simpleText: { text } }]
+      }
     });
 
   } catch (err) {
