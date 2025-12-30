@@ -6,9 +6,6 @@ const app = express();
 const apiRouter = express.Router();
 const PORT = process.env.PORT || 8080;
 
-// --------------------
-// Middleware
-// --------------------
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use("/api", apiRouter);
@@ -22,22 +19,20 @@ let parserReady = false;
 async function initParser() {
   try {
     await timetableParser.init({ cache: 1000 * 60 * 30 });
-    const schoolList = await timetableParser.search("불곡고");
-    const target =
-      schoolList.find(s => s.name?.includes("불곡고")) || schoolList[0];
-
-    timetableParser.setSchool(target.code);
+    const list = await timetableParser.search("불곡고");
+    const school = list.find(s => s.name?.includes("불곡고")) || list[0];
+    timetableParser.setSchool(school.code);
     parserReady = true;
-    console.log("Parser ready:", target.name);
-  } catch (err) {
-    console.error("Parser init failed:", err);
-    setTimeout(initParser, 60_000);
+    console.log("Parser ready:", school.name);
+  } catch (e) {
+    console.error("Parser init failed:", e);
+    setTimeout(initParser, 60000);
   }
 }
 initParser();
 
 // --------------------
-// Date Helpers (KST)
+// Date helpers (KST)
 // --------------------
 const DAYS = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
 const DAY_INDEX = {
@@ -49,7 +44,9 @@ const DAY_INDEX = {
 };
 
 function getKoreaDate(offset = 0) {
-  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  const d = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
+  );
   d.setDate(d.getDate() + offset);
   return d;
 }
@@ -59,63 +56,51 @@ function getKoreaDate(offset = 0) {
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   if (!parserReady) {
-    return res.status(200).json({
+    return res.json({
       version: "2.0",
       template: {
-        outputs: [{ simpleText: { text: "⏳ 서버 준비 중입니다. 잠시 후 다시 시도해주세요." } }]
+        outputs: [{ simpleText: { text: "⏳ 서버 준비 중입니다." } }]
       }
     });
   }
 
   try {
-    console.log("📥", JSON.stringify(req.body, null, 2));
+    const params = req.body.action?.params || {};
 
-    let grade, classroom;
+    const grade = parseInt(params.grade);
+    const classroom = parseInt(params.classroom);
+    const dayParam = params.day; // "오늘" | "내일"
 
-    // 1️⃣ params
-    if (req.body.action?.params) {
-      grade = parseInt(req.body.action.params.grade);
-      classroom = parseInt(req.body.action.params.classroom);
-    }
-
-    // 2️⃣ utterance
-    const utterance = (req.body.userRequest?.utterance || "").toLowerCase();
-
+    // 🔒 파라미터 검증
     if (!grade || !classroom) {
-      let m =
-        utterance.match(/([1-3])\s*학년\s*([1-9])\s*반/) ||
-        utterance.match(/([1-3])\s*[-\/,]\s*([1-9])/);
-
-      if (m) {
-        grade = parseInt(m[1]);
-        classroom = parseInt(m[2]);
-      }
-    }
-
-    if (!grade || !classroom) {
-      return res.status(200).json({
+      return res.json({
         version: "2.0",
         template: {
-          outputs: [{ simpleText: { text: "❌ 학년과 반을 입력해주세요. 예: 2-5, 2학년 5반" } }]
+          outputs: [{ simpleText: { text: "학년과 반을 입력해주세요." } }]
         }
       });
     }
 
-    // --------------------
-    // 오늘 / 내일 판단
-    // --------------------
     let dayOffset = 0; // 기본 오늘
-    if (utterance.includes("내일")) dayOffset = 1;
+    if (dayParam === "내일") dayOffset = 1;
+    if (dayParam && dayParam !== "오늘" && dayParam !== "내일") {
+      return res.json({
+        version: "2.0",
+        template: {
+          outputs: [{ simpleText: { text: "날짜는 오늘 또는 내일만 가능합니다." } }]
+        }
+      });
+    }
 
-    const targetDate = getKoreaDate(dayOffset);
-    const dayName = DAYS[targetDate.getDay()];
+    const date = getKoreaDate(dayOffset);
+    const dayName = DAYS[date.getDay()];
     const idx = DAY_INDEX[dayName];
 
     if (idx === undefined) {
-      return res.status(200).json({
+      return res.json({
         version: "2.0",
         template: {
-          outputs: [{ simpleText: { text: `${dayName}에는 수업이 없어요 📭` } }]
+          outputs: [{ simpleText: { text: `${dayName}에는 수업이 없습니다.` } }]
         }
       });
     }
@@ -133,26 +118,21 @@ apiRouter.post("/timeTable", async (req, res) => {
         .join("\n");
     }
 
-    return res.status(200).json({
+    return res.json({
       version: "2.0",
       template: { outputs: [{ simpleText: { text } }] }
     });
 
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
+    return res.json({
       version: "2.0",
       template: {
-        outputs: [{ simpleText: { text: "⚠️ 시간표 처리 중 오류가 발생했습니다." } }]
+        outputs: [{ simpleText: { text: "시간표 처리 중 오류 발생" } }]
       }
     });
   }
 });
-
-// --------------------
-// Health Check
-// --------------------
-app.get("/healthz", (_, res) => res.send("OK"));
 
 // --------------------
 app.listen(PORT, () => {
