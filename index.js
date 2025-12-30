@@ -28,14 +28,14 @@ let cachedAt = 0;
 const CACHE_TTL = 1000 * 60 * 5; // 5분
 
 async function initParser() {
+  if (parserReady || timetableParser.loading) return; // 중복 초기화 방지
   try {
+    timetableParser.loading = true;
     console.log("⏳ 시간표 파서 초기화 중...");
     await timetableParser.init({ cache: 1000 * 60 * 30 });
 
     const schoolList = await timetableParser.search("불곡고");
-    if (!schoolList || schoolList.length === 0) {
-      throw new Error("학교 검색 실패");
-    }
+    if (!schoolList || schoolList.length === 0) throw new Error("학교 검색 실패");
 
     const target =
       schoolList.find(s => s.name?.includes("불곡고")) || schoolList[0];
@@ -56,7 +56,7 @@ async function initParser() {
 // 서버 시작 후 비동기 초기화
 app.listen(PORT, () => {
   console.log(`🚀 Server listening on port ${PORT}`);
-  if (!parserReady && !timetableParser.loading) initParser();
+  initParser(); // 백그라운드 초기화
 });
 
 // --------------------
@@ -77,24 +77,23 @@ function dayToIndex(dayKorean) {
 
 async function getCachedTimetableForClass(grade, classroom) {
   const now = Date.now();
-  if (!cachedTimetable[`${grade}-${classroom}`] || now - cachedAt > CACHE_TTL) {
+  const key = `${grade}-${classroom}`;
+  if (!cachedTimetable[key] || now - cachedAt > CACHE_TTL) {
     console.log(`⏳ ${grade}학년 ${classroom}반 시간표 로딩`);
     const full = await timetableParser.getTimetable();
-    cachedTimetable[`${grade}-${classroom}`] = full?.[grade]?.[classroom] || [];
+    cachedTimetable[key] = full?.[grade]?.[classroom] || [];
     cachedAt = now;
   }
-  return cachedTimetable[`${grade}-${classroom}`];
+  return cachedTimetable[key];
 }
 
 // --------------------
 // API
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
+  // Parser 준비 안 되었으면 안내 메시지
   if (!parserReady) {
-    if (!timetableParser.loading) {
-      timetableParser.loading = true;
-      initParser(); // 백그라운드 재초기화
-    }
+    if (!timetableParser.loading) initParser(); // 백그라운드 로딩
     return res.json({
       version: "2.0",
       template: {
@@ -182,4 +181,6 @@ ${schedule.length === 0
 // --------------------
 // Health Check
 // --------------------
-app.get("/healthz", (req, res) => res.send("OK"));
+app.get("/healthz", (req, res) => {
+  res.status(200).send("OK"); // parserReady와 무관하게 항상 200
+});
