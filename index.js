@@ -20,30 +20,28 @@ app.use("/api", apiRouter);
 // --------------------
 const timetableParser = new Timetable();
 let parserReady = false;
-timetableParser.loading = false; // 초기화 상태 체크
+timetableParser.loading = false;
 
 // 캐시 (학년-반 단위)
-let cachedTimetable = {};
-let cachedAt = 0;
+let cachedTimetable = {}; // { '1-2': { timetable: [...], cachedAt: timestamp } }
 const CACHE_TTL = 1000 * 60 * 5; // 5분
 
 async function initParser() {
-  if (parserReady || timetableParser.loading) return; // 중복 초기화 방지
+  if (parserReady || timetableParser.loading) return;
   try {
     timetableParser.loading = true;
     console.log("⏳ 시간표 파서 초기화 중...");
+
     await timetableParser.init({ cache: 1000 * 60 * 30 });
 
     const schoolList = await timetableParser.search("불곡고");
     if (!schoolList || schoolList.length === 0) throw new Error("학교 검색 실패");
 
-    const target =
-      schoolList.find(s => s.name?.includes("불곡고")) || schoolList[0];
-
+    const target = schoolList.find(s => s.name?.includes("불곡고")) || schoolList[0];
     timetableParser.setSchool(target.code);
+
     parserReady = true;
     timetableParser.loading = false;
-
     console.log("✅ 파서 준비 완료:", target.name);
   } catch (err) {
     console.error("❌ 파서 초기화 실패:", err);
@@ -53,20 +51,12 @@ async function initParser() {
   }
 }
 
-// 서버 시작 후 비동기 초기화
-app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
-  initParser(); // 백그라운드 초기화
-});
-
 // --------------------
 // Helpers
 // --------------------
 function getTodayKorean() {
   const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
-  const now = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
-  );
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
   return days[now.getDay()];
 }
 
@@ -78,28 +68,28 @@ function dayToIndex(dayKorean) {
 async function getCachedTimetableForClass(grade, classroom) {
   const now = Date.now();
   const key = `${grade}-${classroom}`;
-  if (!cachedTimetable[key] || now - cachedAt > CACHE_TTL) {
+
+  if (!cachedTimetable[key] || now - cachedTimetable[key].cachedAt > CACHE_TTL) {
     console.log(`⏳ ${grade}학년 ${classroom}반 시간표 로딩`);
     const full = await timetableParser.getTimetable();
-    cachedTimetable[key] = full?.[grade]?.[classroom] || [];
-    cachedAt = now;
+    cachedTimetable[key] = {
+      timetable: full?.[grade]?.[classroom] || [],
+      cachedAt: now
+    };
   }
-  return cachedTimetable[key];
+  return cachedTimetable[key].timetable;
 }
 
 // --------------------
 // API
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
-  // Parser 준비 안 되었으면 안내 메시지
   if (!parserReady) {
     if (!timetableParser.loading) initParser(); // 백그라운드 로딩
     return res.json({
       version: "2.0",
       template: {
-        outputs: [
-          { simpleText: { text: "시간표를 준비 중입니다. 잠시만 기다려주세요 🙏" } }
-        ]
+        outputs: [{ simpleText: { text: "시간표를 준비 중입니다. 잠시만 기다려주세요 🙏" } }]
       }
     });
   }
@@ -127,9 +117,7 @@ apiRouter.post("/timeTable", async (req, res) => {
       return res.json({
         version: "2.0",
         template: {
-          outputs: [
-            { simpleText: { text: "학년과 반을 입력해주세요. 예: 2학년 5반" } }
-          ]
+          outputs: [{ simpleText: { text: "학년과 반을 입력해주세요. 예: 2학년 5반" } }]
         }
       });
     }
@@ -141,9 +129,7 @@ apiRouter.post("/timeTable", async (req, res) => {
       return res.json({
         version: "2.0",
         template: {
-          outputs: [
-            { simpleText: { text: `${dayKorean}은 수업이 없습니다.` } }
-          ]
+          outputs: [{ simpleText: { text: `${dayKorean}은 수업이 없습니다.` } }]
         }
       });
     }
@@ -151,29 +137,22 @@ apiRouter.post("/timeTable", async (req, res) => {
     const classSchedule = await getCachedTimetableForClass(grade, classroom);
     const schedule = classSchedule[dayIndex] || [];
 
-    const text =
-`${dayKorean} ${grade}학년 ${classroom}반 시간표
-
-${schedule.length === 0
-  ? "수업 정보가 없습니다."
-  : schedule.map((s, i) => `${i + 1}교시: ${s.subject || "과목 없음"}`).join("\n")}`;
+    const text = `${dayKorean} ${grade}학년 ${classroom}반 시간표\n\n${
+      schedule.length === 0
+        ? "수업 정보가 없습니다."
+        : schedule.map((s, i) => `${i + 1}교시: ${s.subject || "과목 없음"}`).join("\n")
+    }`;
 
     return res.json({
       version: "2.0",
-      template: {
-        outputs: [{ simpleText: { text } }]
-      }
+      template: { outputs: [{ simpleText: { text } }] }
     });
 
   } catch (err) {
     console.error(err);
     return res.json({
       version: "2.0",
-      template: {
-        outputs: [
-          { simpleText: { text: "시간표 처리 중 오류가 발생했습니다." } }
-        ]
-      }
+      template: { outputs: [{ simpleText: { text: "시간표 처리 중 오류가 발생했습니다." } }] }
     });
   }
 });
@@ -183,4 +162,13 @@ ${schedule.length === 0
 // --------------------
 app.get("/healthz", (req, res) => {
   res.status(200).send("OK"); // parserReady와 무관하게 항상 200
+});
+
+// --------------------
+// Server Start
+// --------------------
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+  // 백그라운드 초기화
+  setImmediate(initParser);
 });
