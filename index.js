@@ -6,149 +6,132 @@ const app = express();
 const apiRouter = express.Router();
 const PORT = process.env.PORT || 8080;
 
-// JSON 파싱
+// --------------------
+// Middleware
+// --------------------
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use("/api", apiRouter);
 
-// Parser 준비 상태
+// --------------------
+// Timetable Parser
+// --------------------
 const timetableParser = new Timetable();
 let parserReady = false;
 
-// Parser 초기화
 async function initParser() {
   try {
     await timetableParser.init({ cache: 1000 * 60 * 30 });
     const schoolList = await timetableParser.search("불곡고");
+    const target =
+      schoolList.find(s => s.name?.includes("불곡고")) || schoolList[0];
 
-    if (!schoolList || schoolList.length === 0) throw new Error("검색 결과 없음");
-
-    const target = schoolList.find(s => s.name && s.name.includes("불곡고")) || schoolList[0];
     timetableParser.setSchool(target.code);
     parserReady = true;
-    console.log("Parser ready for:", target.name || target.code);
+    console.log("Parser ready:", target.name);
   } catch (err) {
-    console.error("Parser 초기화 실패:", err);
-    parserReady = false;
-    setTimeout(initParser, 1000 * 60 * 1); // 1분 후 재시도
+    console.error("Parser init failed:", err);
+    setTimeout(initParser, 60_000);
   }
 }
 initParser();
 
-// ----------------------
-// 한국 시간 기준 내일 요일 헬퍼
-// ----------------------
-function getTomorrowKorean() {
-  const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
-  
-  // 한국 시간 기준 현재 날짜
-  const koreaNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-  koreaNow.setDate(koreaNow.getDate() + 1); // 내일
+// --------------------
+// Date Helpers (KST)
+// --------------------
+const DAYS = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
+const DAY_INDEX = {
+  "월요일": 0,
+  "화요일": 1,
+  "수요일": 2,
+  "목요일": 3,
+  "금요일": 4
+};
 
-  return days[koreaNow.getDay()];
+function getKoreaDate(offset = 0) {
+  const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  d.setDate(d.getDate() + offset);
+  return d;
 }
 
-// 월~금 인덱스
-function dayToIndex(dayKorean) {
-  const map = { "월요일":0,"화요일":1,"수요일":2,"목요일":3,"금요일":4 };
-  return map[dayKorean];
-}
-
-// 시간표 문자열 생성
-function formatScheduleText(dayKorean, grade, classroom, scheduleArray) {
-  let text = `${dayKorean} — ${grade}학년 ${classroom}반 시간표\n\n`;
-  if (!scheduleArray || scheduleArray.length === 0) {
-    text += "오늘은 수업이 없어요!";
-  } else {
-    text += scheduleArray.map(o => {
-      const time = o.classTime || o.time || o.시간 || "";
-      const subject = o.subject || o.name || o.과목 || "알 수 없는 과목";
-      return `${time}교시: ${subject}`;
-    }).join("\n");
-  }
-  return text;
-}
-
-// ======================
-// 텍스트 시간표 API
-// ======================
+// --------------------
+// API
+// --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   if (!parserReady) {
-    return res.status(503).json({
+    return res.status(200).json({
       version: "2.0",
       template: {
-        outputs: [{ simpleText: { text: "서버에서 시간표 파서를 준비 중입니다. 잠시 후 다시 시도해주세요." } }]
+        outputs: [{ simpleText: { text: "⏳ 서버 준비 중입니다. 잠시 후 다시 시도해주세요." } }]
       }
     });
   }
 
   try {
-    console.log("📥 Request Body:", JSON.stringify(req.body, null, 2));
+    console.log("📥", JSON.stringify(req.body, null, 2));
 
-    let grade = null;
-    let classroom = null;
+    let grade, classroom;
 
-    // action.params에서 학년/반 추출
+    // 1️⃣ params
     if (req.body.action?.params) {
-      const g = parseInt(req.body.action.params.grade);
-      const c = parseInt(req.body.action.params.classroom);
-      if (!Number.isNaN(g)) grade = g;
-      if (!Number.isNaN(c)) classroom = c;
+      grade = parseInt(req.body.action.params.grade);
+      classroom = parseInt(req.body.action.params.classroom);
     }
 
-    // utterance에서 학년/반 추출
-    const utteranceRaw = req.body.userRequest?.utterance || "";
-    const utterance = String(utteranceRaw).toLowerCase();
+    // 2️⃣ utterance
+    const utterance = (req.body.userRequest?.utterance || "").toLowerCase();
 
     if (!grade || !classroom) {
-      const matchKor = utterance.match(/([1-3])\s*학년\s*([1-9])\s*반/);
-      if (matchKor) {
-        grade = parseInt(matchKor[1]);
-        classroom = parseInt(matchKor[2]);
-      } else {
-        const matchNum = utterance.match(/([1-3])\s*[-\/,]\s*([1-9])/);
-        if (matchNum) {
-          grade = parseInt(matchNum[1]);
-          classroom = parseInt(matchNum[2]);
-        } else {
-          const matchSpace = utterance.match(/\b([1-3])\s+([1-9])\b/);
-          if (matchSpace) {
-            grade = parseInt(matchSpace[1]);
-            classroom = parseInt(matchSpace[2]);
-          }
-        }
+      let m =
+        utterance.match(/([1-3])\s*학년\s*([1-9])\s*반/) ||
+        utterance.match(/([1-3])\s*[-\/,]\s*([1-9])/);
+
+      if (m) {
+        grade = parseInt(m[1]);
+        classroom = parseInt(m[2]);
       }
     }
 
-    // 학년/반 누락 시 안내
-    if (!grade || grade < 1 || grade > 3 || !classroom || classroom < 1 || classroom > 9) {
+    if (!grade || !classroom) {
       return res.status(200).json({
         version: "2.0",
         template: {
-          outputs: [
-            { simpleText: { text: "학년과 반 정보를 올바르게 입력해주세요. 예: '2학년 5반' 또는 '2-5'." } }
-          ]
+          outputs: [{ simpleText: { text: "❌ 학년과 반을 입력해주세요. 예: 2-5, 2학년 5반" } }]
         }
       });
     }
 
-    // ✅ 무조건 내일
-    const dayKorean = getTomorrowKorean();
-    const idx = dayToIndex(dayKorean);
+    // --------------------
+    // 오늘 / 내일 판단
+    // --------------------
+    let dayOffset = 0; // 기본 오늘
+    if (utterance.includes("내일")) dayOffset = 1;
+
+    const targetDate = getKoreaDate(dayOffset);
+    const dayName = DAYS[targetDate.getDay()];
+    const idx = DAY_INDEX[dayName];
 
     if (idx === undefined) {
       return res.status(200).json({
         version: "2.0",
         template: {
-          outputs: [{ simpleText: { text: `${dayKorean}은 수업이 없습니다!` } }]
+          outputs: [{ simpleText: { text: `${dayName}에는 수업이 없어요 📭` } }]
         }
       });
     }
 
     const full = await timetableParser.getTimetable();
-    const scheduleArray = full[grade]?.[classroom]?.[idx] || [];
+    const schedule = full[grade]?.[classroom]?.[idx] || [];
 
-    const text = formatScheduleText(dayKorean, grade, classroom, scheduleArray);
+    let text = `${dayName} — ${grade}학년 ${classroom}반 시간표\n\n`;
+
+    if (schedule.length === 0) {
+      text += "수업이 없습니다!";
+    } else {
+      text += schedule
+        .map(o => `${o.classTime}교시: ${o.subject}`)
+        .join("\n");
+    }
 
     return res.status(200).json({
       version: "2.0",
@@ -156,18 +139,22 @@ apiRouter.post("/timeTable", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("시간표 응답 에러:", err);
+    console.error(err);
     return res.status(500).json({
       version: "2.0",
-      template: [{ simpleText: { text: "시간표를 처리하는 중 오류가 발생했습니다." } }]
+      template: {
+        outputs: [{ simpleText: { text: "⚠️ 시간표 처리 중 오류가 발생했습니다." } }]
+      }
     });
   }
 });
 
-// 헬스체크
-app.get("/healthz", (req, res) => res.send("OK"));
+// --------------------
+// Health Check
+// --------------------
+app.get("/healthz", (_, res) => res.send("OK"));
 
-// 서버 시작
+// --------------------
 app.listen(PORT, () => {
   console.log(`Skill server listening on port ${PORT}`);
 });
