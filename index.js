@@ -15,11 +15,10 @@ app.use("/api", apiRouter);
 // --------------------
 const timetableParser = new Timetable();
 let parserReady = false;
-let parserInitializing = false;
 
+// init을 백그라운드에서 실행
 async function initParser() {
-  if (parserReady || parserInitializing) return;
-  parserInitializing = true;
+  if (parserReady) return;
   try {
     await timetableParser.init({ cache: 1000 * 60 * 30 }); // 30분 캐시
     const list = await timetableParser.search("불곡고");
@@ -27,14 +26,13 @@ async function initParser() {
     timetableParser.setSchool(school.code);
     parserReady = true;
     console.log("Parser ready:", school.name);
-  } catch (e) {
-    console.error("Parser init failed:", e);
-    parserInitializing = false;
-    setTimeout(initParser, 60000);
+  } catch (err) {
+    console.error("Parser init failed:", err);
+    setTimeout(initParser, 60000); // 1분 후 재시도
   }
 }
 
-// 서버 시작 시 미리 초기화
+// 서버 시작 시 미리 백그라운드에서 실행
 initParser();
 
 // --------------------
@@ -54,13 +52,10 @@ function getToday() {
 }
 
 // --------------------
-// API (오늘만 가능 + init 대기)
+// API (오늘만 가능)
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   try {
-    // parser 준비될 때까지 대기 (첫 요청도 처리 가능)
-    if (!parserReady) await initParser();
-
     const params = req.body.action?.params || {};
     const grade = parseInt(params.grade);
     const classroom = parseInt(params.classroom);
@@ -80,6 +75,9 @@ apiRouter.post("/timeTable", async (req, res) => {
         template: { outputs: [{ simpleText: { text: "시간표는 오늘만 조회할 수 있습니다." } }] }
       });
     }
+
+    // parser가 아직 준비되지 않았으면 기다림 (첫 요청 처리)
+    if (!parserReady) await initParser();
 
     const today = getToday();
     const dayName = DAYS[today.getDay()];
@@ -115,7 +113,7 @@ apiRouter.post("/timeTable", async (req, res) => {
 });
 
 // --------------------
-// Health check
+// Health check (즉시 200)
 // --------------------
 app.get("/healthz", (req, res) => {
   res.status(200).send("ok");
