@@ -20,11 +20,12 @@ app.use("/api", apiRouter);
 // --------------------
 const timetableParser = new Timetable();
 let parserReady = false;
+timetableParser.loading = false; // 초기화 상태 체크
 
-// 캐시
-let cachedTimetable = null;
+// 캐시 (학년-반 단위)
+let cachedTimetable = {};
 let cachedAt = 0;
-const CACHE_TTL = 1000 * 60 * 10; // 10분
+const CACHE_TTL = 1000 * 60 * 5; // 5분
 
 async function initParser() {
   try {
@@ -41,16 +42,22 @@ async function initParser() {
 
     timetableParser.setSchool(target.code);
     parserReady = true;
+    timetableParser.loading = false;
 
     console.log("✅ 파서 준비 완료:", target.name);
   } catch (err) {
     console.error("❌ 파서 초기화 실패:", err);
     parserReady = false;
-    setTimeout(initParser, 1000 * 60);
+    timetableParser.loading = false;
+    setTimeout(initParser, 1000 * 60); // 1분 뒤 재시도
   }
 }
 
-initParser();
+// 서버 시작 후 비동기 초기화
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+  if (!parserReady && !timetableParser.loading) initParser();
+});
 
 // --------------------
 // Helpers
@@ -68,14 +75,15 @@ function dayToIndex(dayKorean) {
   return map[dayKorean];
 }
 
-async function getCachedTimetable() {
+async function getCachedTimetableForClass(grade, classroom) {
   const now = Date.now();
-  if (!cachedTimetable || now - cachedAt > CACHE_TTL) {
-    console.log("⏳ 시간표 캐시 새로 로딩");
-    cachedTimetable = await timetableParser.getTimetable();
+  if (!cachedTimetable[`${grade}-${classroom}`] || now - cachedAt > CACHE_TTL) {
+    console.log(`⏳ ${grade}학년 ${classroom}반 시간표 로딩`);
+    const full = await timetableParser.getTimetable();
+    cachedTimetable[`${grade}-${classroom}`] = full?.[grade]?.[classroom] || [];
     cachedAt = now;
   }
-  return cachedTimetable;
+  return cachedTimetable[`${grade}-${classroom}`];
 }
 
 // --------------------
@@ -83,6 +91,10 @@ async function getCachedTimetable() {
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   if (!parserReady) {
+    if (!timetableParser.loading) {
+      timetableParser.loading = true;
+      initParser(); // 백그라운드 재초기화
+    }
     return res.json({
       version: "2.0",
       template: {
@@ -137,8 +149,8 @@ apiRouter.post("/timeTable", async (req, res) => {
       });
     }
 
-    const full = await getCachedTimetable();
-    const schedule = full?.[grade]?.[classroom]?.[dayIndex] || [];
+    const classSchedule = await getCachedTimetableForClass(grade, classroom);
+    const schedule = classSchedule[dayIndex] || [];
 
     const text =
 `${dayKorean} ${grade}학년 ${classroom}반 시간표
@@ -171,10 +183,3 @@ ${schedule.length === 0
 // Health Check
 // --------------------
 app.get("/healthz", (req, res) => res.send("OK"));
-
-// --------------------
-// Start
-// --------------------
-app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
-});
