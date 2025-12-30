@@ -32,7 +32,7 @@ async function initParser() {
 initParser();
 
 // --------------------
-// Date helpers (KST)
+// Date helpers (KST 서버 기준)
 // --------------------
 const DAYS = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
 const DAY_INDEX = {
@@ -43,14 +43,12 @@ const DAY_INDEX = {
   "금요일": 4
 };
 
-function getKoreaDate() {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })
-  );
+function getToday() {
+  return new Date(); // KST 서버라면 이게 가장 정확
 }
 
 // --------------------
-// API (오늘만 가능 + 요일 보정)
+// API (오늘만 가능)
 // --------------------
 apiRouter.post("/timeTable", async (req, res) => {
   if (!parserReady) {
@@ -69,7 +67,7 @@ apiRouter.post("/timeTable", async (req, res) => {
     const classroom = parseInt(params.classroom);
     const dayParam = params.day; // 반드시 "오늘"
 
-    // 🔒 파라미터 검증
+    // 🔒 학년/반 검증
     if (!grade || !classroom) {
       return res.json({
         version: "2.0",
@@ -89,11 +87,11 @@ apiRouter.post("/timeTable", async (req, res) => {
       });
     }
 
-    const date = getKoreaDate();
-    const dayName = DAYS[date.getDay()];
-    let idx = DAY_INDEX[dayName];
+    const today = getToday();
+    const dayName = DAYS[today.getDay()];
+    const idx = DAY_INDEX[dayName];
 
-    // 주말 차단
+    // 주말 처리
     if (idx === undefined) {
       return res.json({
         version: "2.0",
@@ -102,10 +100,6 @@ apiRouter.post("/timeTable", async (req, res) => {
         }
       });
     }
-
-    // 🔧 comcigan-parser 요일 1일 밀림 보정
-    idx = idx - 1;
-    if (idx < 0) idx = 0;
 
     const full = await timetableParser.getTimetable();
     const schedule = full[grade]?.[classroom]?.[idx] || [];
