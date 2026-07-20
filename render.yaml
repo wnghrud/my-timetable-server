@@ -3,10 +3,12 @@ services:
     name: timetable-server-tomorrow
     env: node
     plan: free
+    region: sg                # 한국과 가장 가까운 아시아(싱가포르) 리전 지정으로 응답 속도 향상
     branch: main
     buildCommand: npm install
     startCommand: npm start
     autoDeploy: true
+    healthCheckPath: /healthz # index.js의 헬스체크 엔드포인트와 연동하여 안정성 보장
     envVars:
       - key: NODE_ENV
         value: production
