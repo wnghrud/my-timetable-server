@@ -3,16 +3,14 @@ const Timetable = require("comcigan-parser");
 const morgan = require("morgan");
 
 const app = express();
-const apiRouter = express.Router();
 const PORT = process.env.PORT || 8080;
 
 // --------------------
-// Middleware (express 내장 함수 사용으로 body-parser 의존성 제거)
+// Middleware
 // --------------------
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use("/api", apiRouter);
 
 // --------------------
 // Timetable Parser Configuration
@@ -31,7 +29,7 @@ const CACHE_TTL = 1000 * 60 * 10; // 10분 캐시 유지
 async function initParser() {
   try {
     console.log("⏳ 시간표 파서 초기화 중...");
-    // comcigan-parser 기본 초기화 (내부 컴포지션 설정 캐시 시간 부여)
+    // comcigan-parser 기본 초기화
     await timetableParser.init({ cache: 1000 * 60 * 30 });
 
     const schoolList = await timetableParser.search("불곡고");
@@ -95,8 +93,10 @@ async function getCachedTimetable() {
 // --------------------
 // Kakao Chatbot API Router
 // --------------------
-apiRouter.post("/timeTable", async (req, res) => {
-  // 1. 파서 미준비 시 방어 코드 처리
+
+// 1. 카카오톡 챗봇이 데이터를 찌르는 실제 경로 (POST 방식 대응)
+app.post("/api/timeTable", async (req, res) => {
+  // 파서 미준비 시 방어 코드 처리
   if (!parserReady) {
     return res.json({
       version: "2.0",
@@ -112,13 +112,13 @@ apiRouter.post("/timeTable", async (req, res) => {
     let grade = null;
     let classroom = null;
 
-    // 2. 카카오톡 엔티티/파라미터 추출 시도
+    // 카카오톡 엔티티/파라미터 추출 시도
     if (req.body.action?.params) {
       if (req.body.action.params.grade) grade = parseInt(req.body.action.params.grade, 10);
       if (req.body.action.params.classroom) classroom = parseInt(req.body.action.params.classroom, 10);
     }
 
-    // 3. 파라미터가 비어있을 시 일반 발화 텍스트 정규식 분석 보완
+    // 파라미터가 비어있을 시 일반 발화 텍스트 정규식 분석 보완
     if (!grade || !classroom) {
       const utterance = req.body.userRequest?.utterance || "";
       const match = utterance.match(/([1-3])\s*학년\s*([1-9][0-2]?)\s*반|([1-3])\s*[-\/]\s*([1-9][0-2]?)/);
@@ -128,7 +128,7 @@ apiRouter.post("/timeTable", async (req, res) => {
       }
     }
 
-    // 4. 학년 및 반 유효성 검증 예외 처리
+    // 학년 및 반 유효성 검증 예외 처리
     if (!grade || !classroom) {
       return res.json({
         version: "2.0",
@@ -143,7 +143,7 @@ apiRouter.post("/timeTable", async (req, res) => {
     const dayKorean = getTomorrowKorean();
     const dayIndex = dayToIndex(dayKorean);
 
-    // 5. 주말(토, 일) 수업 예외 처리
+    // 주말(토, 일) 수업 예외 처리
     if (dayIndex === undefined) {
       return res.json({
         version: "2.0",
@@ -155,11 +155,11 @@ apiRouter.post("/timeTable", async (req, res) => {
       });
     }
 
-    // 6. 데이터베이스/캐싱 시간표 조회
+    // 데이터베이스/캐싱 시간표 조회
     const full = await getCachedTimetable();
     const schedule = full?.[grade]?.[classroom]?.[dayIndex] || [];
 
-    // 7. 출력용 응답 메시지 빌드
+    // 출력용 응답 메시지 빌드
     const scheduleText = schedule.length === 0
       ? "등록된 정규 수업 정보가 없습니다."
       : schedule.map((s, i) => `${i + 1}교시: ${s.subject || "과목 정보 없음"}`).join("\n");
@@ -186,8 +186,18 @@ apiRouter.post("/timeTable", async (req, res) => {
   }
 });
 
+// 2. 주소창에 직접 도메인을 입력하여 테스트해 볼 때 404 차단용 엔드포인트 (GET 방식 대응)
+app.get("/api/timeTable", (req, res) => {
+  res.status(200).send("카카오 챗봇용 스킬 URL이 정상적으로 가동 중입니다! 카카오 오픈빌더에서 스킬 테스트를 진행해 보세요. 🤖");
+});
+
+// 3. 서버 기본 도메인 접속 시 메인 페이지 응답
+app.get("/", (req, res) => {
+  res.status(200).send("내일 시간표 알리미 메인 서버 페이지입니다. 🚀");
+});
+
 // --------------------
-// Health Check Endpoint
+// Health Check Endpoint (Render용)
 // --------------------
 app.get("/healthz", (req, res) => res.status(200).send("OK"));
 
