@@ -37,7 +37,7 @@ bower_components
 # Compiled binary addons (https://nodejs.org/api/addons.html)
 build/Release
 
-# Dependency directories
+# Dependency directories (보안 및 용량으로 인해 절대 원격에 올리면 안 되는 폴더)
 node_modules/
 jspm_packages/
 
@@ -65,7 +65,7 @@ web_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variable files
+# dotenv environment variable files (비밀키, API 키 보호를 위해 필수)
 .env
 .env.*
 !.env.example
@@ -84,9 +84,6 @@ dist
 
 # Gatsby files
 .cache/
-# Comment in the public line in if your project uses Gatsby and not Next.js
-# https://nextjs.org/blog/next-9-1#public-directory-support
-# public
 
 # vuepress build output
 .vuepress/dist
@@ -137,3 +134,9 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Editor directories and files (OS 및 에디터 개별 설정 추가 무시)
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
